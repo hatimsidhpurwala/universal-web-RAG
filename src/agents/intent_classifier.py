@@ -1,20 +1,36 @@
 """
-Intent classification agent – decides how to route a user's message.
-Uses Groq LLM with structured JSON output.
+Intent classification agent.
+
+Uses LangChain's with_structured_output() instead of hard-prompting.
+
+Before (hard prompting):
+  - System prompt contained the raw JSON schema as text
+  - LLM returned a plain string → json.loads() → manual Pydantic validation
+  - Risk: LLM could forget the format, use wrong field names, wrong types
+
+After (with_structured_output):
+  - Pydantic model IS the schema (single source of truth)
+  - LangChain converts it to a tool-calling contract
+  - Groq is FORCED to return that exact structure
+  - We get back a typed Pydantic object — no parsing, no risk of crashes
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import List, Optional
 
-from groq import Groq
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 
 from config.settings import GROQ_API_KEY, LLM_MODEL
 from src.agents.models import IntentClassification
 
 logger = logging.getLogger(__name__)
+
+# ── System prompt ────────────────────────────────────────────────────────────
+# Note: NO "Respond with valid JSON" instruction needed anymore.
+# LangChain enforces the schema via tool-calling at the API level.
 
 _SYSTEM_PROMPT = """\
 You are an intent-classification assistant. Given a user message and
@@ -34,44 +50,46 @@ Rules:
    uploaded data, or scraped website → ALWAYS classify as "retrieval_needed".
 2. If the message is a conversational pleasantry → NOT "retrieval_needed".
 3. Set confidence to 0.9+ for clear cases, 0.6–0.8 for ambiguous ones.
-
-Respond with valid JSON matching this schema:
-{
-  "intent": "<one of the categories>",
-  "confidence": <float 0-1>,
-  "reasoning": "<brief explanation>",
-  "needs_retrieval": <bool>
-}
 """
 
+# ── Structured LLM (built once, reused) ────────────────────────────────────
+# with_structured_output reads IntentClassification's fields + descriptions
+# and builds a tool-calling contract automatically.
+_llm = ChatGroq(
+    api_key=GROQ_API_KEY,
+    model=LLM_MODEL,
+    temperature=0.1,
+    max_tokens=300,
+)
+_structured_llm = _llm.with_structured_output(IntentClassification)
+
+
+# ── Public function ──────────────────────────────────────────────────────────
 
 def classify_intent(
     question: str,
     conversation_history: Optional[List[dict]] = None,
 ) -> IntentClassification:
-    """Classify the *question* and return a structured intent result."""
-    client = Groq(api_key=GROQ_API_KEY)
+    """Classify *question* and return a structured IntentClassification.
 
-    messages: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    Returns a guaranteed valid Pydantic object — no json.loads, no
+    manual field mapping, no crash risk from malformed LLM output.
+    """
+    messages = [SystemMessage(content=_SYSTEM_PROMPT)]
 
     # Inject recent history for context
     if conversation_history:
         for msg in conversation_history[-6:]:
-            messages.append(msg)
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "user":
+                messages.append(HumanMessage(content=content))
+            # Skip assistant messages to keep token count low
 
-    messages.append({"role": "user", "content": question})
+    messages.append(HumanMessage(content=question))
 
     try:
-        resp = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=messages,
-            temperature=0.1,
-            max_tokens=300,
-            response_format={"type": "json_object"},
-        )
-        raw = resp.choices[0].message.content
-        data = json.loads(raw)
-        result = IntentClassification(**data)
+        result: IntentClassification = _structured_llm.invoke(messages)
         logger.info(
             "Intent: %s (confidence=%.2f, retrieval=%s)",
             result.intent,

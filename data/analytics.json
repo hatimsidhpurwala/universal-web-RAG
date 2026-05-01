@@ -219,6 +219,16 @@
       "web_search_used": false,
       "sources_count": 0,
       "user_feedback": ""
+    },
+    {
+      "timestamp": "2026-05-02T01:28:29.203183",
+      "query": "hello ",
+      "answer_length": 59,
+      "confidence": 1.0,
+      "response_time_ms": 2629,
+      "web_search_used": false,
+      "sources_count": 0,
+      "user_feedback": ""
     }
   ],
   "improvements_applied": [],
@@ -660,6 +670,61 @@
         "avg_response_time_ms": 19528,
         "web_search_rate": 0.318,
         "failure_rate": 0.045,
+        "negative_feedback_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-05-01T17:17:04.785988",
+      "summary": {
+        "total_interactions": 22,
+        "avg_confidence": 0.832,
+        "avg_response_time_ms": 19528,
+        "web_search_rate": 0.318,
+        "failure_rate": 0.045,
+        "negative_feedback_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-05-02T00:46:43.811678",
+      "summary": {
+        "total_interactions": 22,
+        "avg_confidence": 0.832,
+        "avg_response_time_ms": 19528,
+        "web_search_rate": 0.318,
+        "failure_rate": 0.045,
+        "negative_feedback_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-05-02T01:28:18.956453",
+      "summary": {
+        "total_interactions": 22,
+        "avg_confidence": 0.832,
+        "avg_response_time_ms": 19528,
+        "web_search_rate": 0.318,
+        "failure_rate": 0.045,
+        "negative_feedback_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-05-02T01:28:26.559868",
+      "summary": {
+        "total_interactions": 22,
+        "avg_confidence": 0.832,
+        "avg_response_time_ms": 19528,
+        "web_search_rate": 0.318,
+        "failure_rate": 0.045,
+        "negative_feedback_count": 0
+      }
+    },
+    {
+      "timestamp": "2026-05-02T01:28:29.902372",
+      "summary": {
+        "total_interactions": 23,
+        "avg_confidence": 0.839,
+        "avg_response_time_ms": 18794,
+        "web_search_rate": 0.304,
+        "failure_rate": 0.043,
         "negative_feedback_count": 0
       }
     }

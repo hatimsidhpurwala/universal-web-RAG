@@ -1,20 +1,28 @@
 """
-Response generator agent – synthesises a final answer from retrieved
-context chunks using Groq LLM with structured JSON output.
+Response generator agent.
+
+Uses LangChain's with_structured_output() instead of hard-prompting.
+
+Synthesises a final answer from retrieved context chunks. Returns a
+guaranteed-valid ResponseGeneration Pydantic object — no json.loads,
+no parsing risk, no "Respond with valid JSON" in the prompt.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import List, Optional
 
-from groq import Groq
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_groq import ChatGroq
 
 from config.settings import GROQ_API_KEY, LLM_MODEL
 from src.agents.models import ResponseGeneration
 
 logger = logging.getLogger(__name__)
+
+# ── System prompt ────────────────────────────────────────────────────────────
+# Schema enforcement is done via tool-calling — no JSON block needed here.
 
 _SYSTEM_PROMPT = """\
 You are a helpful AI assistant. Generate a clear, accurate answer to the
@@ -43,28 +51,30 @@ Rules:
 11. IMPORTANT: If context chunks are provided (not empty), ALWAYS try to
     provide a useful answer. "No information available" should ONLY be
     used when the context is truly empty or completely irrelevant.
-
-Respond with valid JSON:
-{
-  "answer": "<your answer>",
-  "confidence": <float 0-1>,
-  "sources_used": [
-    {"source_url": "<url>", "site_name": "<name>", "relevance_score": <float>}
-  ],
-  "follow_up_suggestions": ["question1", "question2"]
-}
 """
 
+# ── Structured LLM ──────────────────────────────────────────────────────────
+_llm = ChatGroq(
+    api_key=GROQ_API_KEY,
+    model=LLM_MODEL,
+    temperature=0.3,
+    max_tokens=2000,
+)
+_structured_llm = _llm.with_structured_output(ResponseGeneration)
+
+
+# ── Public function ──────────────────────────────────────────────────────────
 
 def generate_response(
     question: str,
     context_chunks: List[dict],
     conversation_history: Optional[List[dict]] = None,
 ) -> ResponseGeneration:
-    """Generate a response for *question* using *context_chunks*."""
-    client = Groq(api_key=GROQ_API_KEY)
+    """Generate a response for *question* grounded in *context_chunks*.
 
-    # Build context block
+    Returns a guaranteed valid ResponseGeneration Pydantic object.
+    """
+    # Build the context block from retrieved chunks
     context_parts: list[str] = []
     for i, chunk in enumerate(context_chunks, 1):
         source = chunk.get("source_url", "unknown")
@@ -73,30 +83,25 @@ def generate_response(
             f"--- Chunk {i} (source: {source}, relevance: {score:.2f}) ---\n"
             f"{chunk['text']}\n"
         )
-    context_block = "\n".join(context_parts) if context_parts else "(no context available)"
+    context_block = (
+        "\n".join(context_parts) if context_parts else "(no context available)"
+    )
 
-    messages: list[dict] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    messages = [SystemMessage(content=_SYSTEM_PROMPT)]
+
     if conversation_history:
         for msg in conversation_history[-6:]:
-            messages.append(msg)
+            if msg.get("role") == "user":
+                messages.append(HumanMessage(content=msg.get("content", "")))
 
     user_content = (
         f"Context:\n{context_block}\n\n"
         f"Question: {question}"
     )
-    messages.append({"role": "user", "content": user_content})
+    messages.append(HumanMessage(content=user_content))
 
     try:
-        resp = client.chat.completions.create(
-            model=LLM_MODEL,
-            messages=messages,
-            temperature=0.3,
-            max_tokens=2000,
-            response_format={"type": "json_object"},
-        )
-        raw = resp.choices[0].message.content
-        data = json.loads(raw)
-        result = ResponseGeneration(**data)
+        result: ResponseGeneration = _structured_llm.invoke(messages)
         logger.info(
             "Response generated (confidence=%.2f, sources=%d)",
             result.confidence,

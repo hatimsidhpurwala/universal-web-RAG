@@ -1,0 +1,7 @@
+[server]
+# Use 'watchdog' to avoid Streamlit scanning deep into site-packages
+# (eliminates the torchvision/transformers warning flood)
+fileWatcherType = "watchdog"
+
+[browser]
+gatherUsageStats = false
