@@ -200,7 +200,7 @@ class RAGAgent:
 
         # 5a. Auto deep research – SKIPPED for document questions
         if (
-            confidence < 0.80
+            confidence < 0.65
             and not result.get("web_search_performed", False)
             and not is_document_q
         ):

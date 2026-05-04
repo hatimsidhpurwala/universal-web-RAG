@@ -53,8 +53,8 @@ CHUNK_OVERLAP: int = 50        # in tokens
 # Retrieval
 # ---------------------------------------------------------------------------
 COLLECTION_NAME: str = "scraped_pages"
-TOP_K_RESULTS: int = 8
-TOP_K_PER_QUERY: int = 3
+TOP_K_RESULTS: int = 12          # ↑ more chunks → richer context
+TOP_K_PER_QUERY: int = 5         # ↑ broader per-query sweep
 SIMILARITY_THRESHOLD: float = 0.3
 
 # ---------------------------------------------------------------------------
@@ -65,9 +65,9 @@ INTENT_CONFIDENCE_THRESHOLD: float = 0.7
 # ---------------------------------------------------------------------------
 # Web Search
 # ---------------------------------------------------------------------------
-WEB_SEARCH_CONFIDENCE_THRESHOLD: float = 0.7
-WEB_SEARCH_MAX_RESULTS: int = 3
-DEEP_RESEARCH_NUM_QUERIES: int = 3
+WEB_SEARCH_CONFIDENCE_THRESHOLD: float = 0.60   # ↓ trigger research more readily
+WEB_SEARCH_MAX_RESULTS: int = 5                  # ↑ scrape more pages per search
+DEEP_RESEARCH_NUM_QUERIES: int = 5               # ↑ broader deep research
 SCRAPE_DELAY_SECONDS: float = 1.0   # delay between domain requests
 
 # ---------------------------------------------------------------------------

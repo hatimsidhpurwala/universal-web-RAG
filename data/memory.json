@@ -4,17 +4,6 @@
       "answer_style": "balanced",
       "preferred_sources": [],
       "topics_of_interest": [
-        "timechart.org",
-        "Time Attendance System services",
-        "services",
-        "What services?",
-        "the light",
-        "How are you?",
-        "greeting",
-        "https://izzan.org/ website",
-        "Izzan.org website",
-        "the PDF",
-        "the uploaded PDF",
         "PDF upload",
         "PDF contents",
         "SALTO Keycards",
@@ -23,10 +12,22 @@
         "hello ",
         "alhutaib.com website",
         "the PDF the user has uploaded",
-        "PDF content"
+        "PDF content",
+        "what is the pdf i have uploaded right now is about ",
+        "what is this pdf about which i have uploaded right now ",
+        "SALTO pdf",
+        "SALTO Keycards pdf",
+        "hell ",
+        "SALTO PDF",
+        "SALTO keycards PDF",
+        "SALTO keycards",
+        "SALTO keycards in UAE, Dubai",
+        "SALTO keycards contact details",
+        "SALTO keycards in India"
       ],
-      "interaction_count": 41,
-      "created_at": "2026-04-29T18:36:50.341961"
+      "interaction_count": 61,
+      "created_at": "2026-04-29T18:36:50.341961",
+      "answer_style_confirmed": true
     }
   },
   "global_knowledge": {
@@ -38,7 +39,7 @@
   },
   "conversation_summaries": {},
   "frequently_asked": {
-    "hello": 10,
+    "hello": 13,
     "https://alhutaib.com/": 2,
     "what is this website about": 1,
     "what software solutions does this cpmpany provide": 1,
@@ -67,6 +68,22 @@
     "what is the pdf about": 1,
     "no i awas asking about the pdf i have uploaded right now": 1,
     "what is the pdf about i have uploaded right now": 1,
-    "i am talking about the pdf i have uploaded right now": 1
+    "i am talking about the pdf i have uploaded right now": 1,
+    "what is the pdf about which i have uploaded right now": 1,
+    "what is the pdf i have uploaded right now is about": 1,
+    "what is this pdf about which i have uploaded right now": 1,
+    "i have uploaded the salto pdf right now": 1,
+    "now explain me about the pdf": 1,
+    "where i c an find these cards in dubai, uae and globally": 1,
+    "can i get their contact details or phone numbers": 1,
+    "can i get their contact details or phone numbers or website details": 1,
+    "hell": 1,
+    "what is this pdf about which i have uploaded right now regarding salto": 1,
+    "explain me in a brief manner regarding the pdf in": 1,
+    "where is this card is been used or been practiced": 1,
+    "can i get the contact or website details that where can i found this cards in uae, dubai": 1,
+    "where can i find these key cards in india": 1,
+    "can i get the contact details": 1,
+    "im asking in india": 1
   }
 }
