@@ -78,6 +78,35 @@ class VectorStore:
         except Exception as exc:
             logger.error("Failed to ensure collection: %s", exc)
 
+        # Always ensure the payload index exists (idempotent)
+        self._ensure_payload_index()
+
+    def _ensure_payload_index(self) -> None:
+        """Create a keyword index on ``site_name`` if it doesn't exist yet.
+
+        Qdrant Cloud (and some local configs) REQUIRE a payload index before
+        you can filter on a field.  Without this, any ``FieldCondition`` on
+        ``site_name`` returns HTTP 400 and the filter silently falls back to
+        returning empty results.
+
+        This method is safe to call repeatedly – Qdrant ignores the request
+        if the index already exists.
+        """
+        try:
+            from qdrant_client.http.models import PayloadSchemaType
+            self.client.create_payload_index(
+                collection_name=COLLECTION_NAME,
+                field_name="site_name",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+            logger.info(
+                "Payload index ensured on 'site_name' in '%s'", COLLECTION_NAME
+            )
+        except Exception as exc:
+            # Already exists → fine.  Any other error → log and continue.
+            logger.debug("Payload index note: %s", exc)
+
+
     # ------------------------------------------------------------------
     # Storage
     # ------------------------------------------------------------------

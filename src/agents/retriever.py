@@ -59,20 +59,28 @@ def retrieve_chunks(
     effective_top_k = max(top_k_per_query, 5)
 
     def _search(query: str, prefix: Optional[str], threshold: Optional[float]) -> List[dict]:
-        """Embed query and search – with or without source prefix."""
+        """Embed query and search – with or without source prefix.
+
+        When a source prefix is given we disable the score threshold:
+        generic "what is this about" questions score very low (≈ 0.18)
+        against specific technical docs, so threshold filtering would
+        silently drop all results even though the chunks ARE correct.
+        """
         query_vector = embed_query(query)
         if prefix:
+            # Always retrieve ALL chunks from this source, ignoring threshold
             return vector_store.search_chunks_by_prefix(
                 query_vector=query_vector,
                 site_prefix=prefix,
                 top_k=effective_top_k,
-                score_threshold=threshold,
+                score_threshold=None,   # ← disabled intentionally
             )
         return vector_store.search_chunks(
             query_vector=query_vector,
             top_k=effective_top_k,
             score_threshold=threshold,
         )
+
 
     def _collect(chunks: List[dict]) -> None:
         for chunk in chunks:
