@@ -266,7 +266,7 @@ def index_text_content(text: str, source_name: str, vs: VectorStore) -> int:
     return vs.store_chunks_for_site(chunks, source_name)
 
 
-def process_input(text: str, file=None, audio_bytes=None) -> dict:
+def process_input(text: str, file=None, audio_bytes=None, force_reindex: bool = False) -> dict:
     vs = st.session_state.vector_store
     actions, scraped_sites = [], []
     processed_text = text or ""
@@ -296,16 +296,23 @@ def process_input(text: str, file=None, audio_bytes=None) -> dict:
             with st.spinner("📄 Extracting PDF…"):
                 pdf_text = extract_pdf_text(raw)
             site_name = f"pdf_{Path(file.name).stem}"
-            if vs.has_site(site_name):
-                actions.append(f"📄 PDF already indexed as '{site_name}'")
-            else:
+
+            already_exists = vs.has_site(site_name)
+            if force_reindex and already_exists:
+                with st.spinner("🔄 Re-indexing with deep chunking…"):
+                    vs.clear_site(site_name)
+                    stored = index_text_content(pdf_text, site_name, vs)
+                actions.append(f"📄 Deep re-indexed PDF → {stored} chunks")
+            elif not already_exists:
                 with st.spinner("📦 Indexing PDF…"):
                     stored = index_text_content(pdf_text, site_name, vs)
                 actions.append(f"📄 Indexed PDF → {stored} chunks")
+            else:
+                actions.append(f"📄 PDF already indexed as '{site_name}'")
+
             processed_text = pdf_text[:500] + ("…" if len(pdf_text) > 500 else "")
             input_type = "pdf"
             scraped_sites.append(site_name)
-            # ← Track this doc so agent.ask() can restrict retrieval to it
             if site_name not in st.session_state.active_doc_sites:
                 st.session_state.active_doc_sites.append(site_name)
 
@@ -444,7 +451,7 @@ with st.sidebar:
         key="file_upload",
     )
     if uploaded_file:
-        result = process_input("", file=uploaded_file)
+        result = process_input("", file=uploaded_file, force_reindex=True)
         for action in result["actions_taken"]:
             st.success(action)
 

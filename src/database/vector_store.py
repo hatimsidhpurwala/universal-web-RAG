@@ -146,6 +146,7 @@ class VectorStore:
                         "source_url": chunk.get("source_url", ""),
                         "site_name": site_name,
                         "chunk_index": chunk.get("chunk_index", 0),
+                        "context_header": chunk.get("context_header", ""),
                     },
                 )
             )
