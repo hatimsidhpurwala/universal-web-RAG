@@ -144,8 +144,16 @@ class VectorStore:
         query_vector: List[float],
         top_k: int = 8,
         score_threshold: Optional[float] = None,
+        site_name_filter: Optional[str] = None,
     ) -> List[dict]:
         """Search for the *top_k* most similar chunks.
+
+        Parameters
+        ----------
+        site_name_filter : str | None
+            If provided, restrict results to chunks whose ``site_name``
+            exactly matches this value. Use ``search_chunks_by_prefix``
+            to filter by prefix (e.g. all ``pdf_*`` sources).
 
         Returns
         -------
@@ -153,12 +161,24 @@ class VectorStore:
             Each dict contains ``text``, ``source_url``, ``site_name``,
             ``chunk_index``, and ``score``.
         """
+        query_filter = None
+        if site_name_filter:
+            query_filter = Filter(
+                must=[
+                    FieldCondition(
+                        key="site_name",
+                        match=MatchValue(value=site_name_filter),
+                    )
+                ]
+            )
+
         try:
             results = self.client.search(
                 collection_name=COLLECTION_NAME,
                 query_vector=query_vector,
                 limit=top_k,
                 score_threshold=score_threshold,
+                query_filter=query_filter,
             )
         except Exception as exc:
             logger.error("Qdrant search failed: %s", exc)
@@ -176,8 +196,71 @@ class VectorStore:
                 }
             )
 
-        logger.info("Search returned %d results (top_k=%d)", len(chunks), top_k)
+        logger.info(
+            "Search returned %d results (top_k=%d, filter=%s)",
+            len(chunks), top_k, site_name_filter or "none",
+        )
         return chunks
+
+    def search_chunks_by_prefix(
+        self,
+        query_vector: List[float],
+        site_prefix: str,
+        top_k: int = 8,
+        score_threshold: Optional[float] = None,
+    ) -> List[dict]:
+        """Search only chunks whose site_name starts with *site_prefix*.
+
+        For example, ``site_prefix="pdf_"`` returns only uploaded-document
+        chunks, ignoring all web-scraped content.
+
+        Qdrant does not support prefix match natively on its cloud tier,
+        so we scroll to collect all matching site names first, then
+        issue one search per site and merge the results.
+        """
+        # Step 1 – find all site names that start with the prefix
+        try:
+            scroll_results, _ = self.client.scroll(
+                collection_name=COLLECTION_NAME,
+                limit=500,
+                with_payload=["site_name"],
+                with_vectors=False,
+            )
+            matching_sites = sorted(set(
+                p.payload["site_name"]
+                for p in scroll_results
+                if p.payload.get("site_name", "").startswith(site_prefix)
+            ))
+        except Exception as exc:
+            logger.error("Prefix scroll failed: %s", exc)
+            return []
+
+        if not matching_sites:
+            logger.info("No sites found with prefix '%s'", site_prefix)
+            return []
+
+        logger.info(
+            "Prefix '%s' matched sites: %s", site_prefix, matching_sites
+        )
+
+        # Step 2 – search within each matching site and merge
+        all_chunks: list[dict] = []
+        seen: set[str] = set()
+        for site in matching_sites:
+            chunks = self.search_chunks(
+                query_vector=query_vector,
+                top_k=top_k,
+                score_threshold=score_threshold,
+                site_name_filter=site,
+            )
+            for c in chunks:
+                key = c["text"][:200]
+                if key not in seen:
+                    seen.add(key)
+                    all_chunks.append(c)
+
+        all_chunks.sort(key=lambda c: c.get("score", 0), reverse=True)
+        return all_chunks[:top_k]
 
     # ------------------------------------------------------------------
     # Listing

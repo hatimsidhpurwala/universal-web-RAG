@@ -1,12 +1,18 @@
 """
 Retriever agent – takes generated queries, embeds them, searches
 Qdrant, deduplicates, and returns the top-k most relevant chunks.
+
+Key improvement: accepts an optional ``source_prefix`` that restricts
+the search to chunks from a specific source type (e.g. ``"pdf_"`` for
+uploaded documents).  When a prefix is given but returns no results,
+it automatically falls back to searching all sources so the user always
+gets an answer.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import List
+from typing import List, Optional
 
 from src.core.embedder import embed_query
 from src.database.vector_store import VectorStore
@@ -22,6 +28,7 @@ def retrieve_chunks(
     top_k_per_query: int = TOP_K_PER_QUERY,
     final_top_k: int = TOP_K_RESULTS,
     similarity_threshold: float = SIMILARITY_THRESHOLD,
+    source_prefix: Optional[str] = None,
 ) -> List[dict]:
     """Retrieve and deduplicate the most relevant chunks for *queries*.
 
@@ -37,6 +44,10 @@ def retrieve_chunks(
         Maximum number of chunks to return after deduplication.
     similarity_threshold : float
         Minimum score to accept a chunk.
+    source_prefix : str | None
+        If given (e.g. ``"pdf_"``), restrict the search to chunks whose
+        ``site_name`` starts with this prefix.  Falls back to all sources
+        if no results are found with the prefix filter.
 
     Returns
     -------
@@ -45,41 +56,65 @@ def retrieve_chunks(
     """
     all_results: list[dict] = []
     seen_texts: set[str] = set()
-
-    # Use a more generous per-query limit to get broader coverage
     effective_top_k = max(top_k_per_query, 5)
 
-    for query in queries:
+    def _search(query: str, prefix: Optional[str], threshold: Optional[float]) -> List[dict]:
+        """Embed query and search – with or without source prefix."""
         query_vector = embed_query(query)
-        results = vector_store.search_chunks(
+        if prefix:
+            return vector_store.search_chunks_by_prefix(
+                query_vector=query_vector,
+                site_prefix=prefix,
+                top_k=effective_top_k,
+                score_threshold=threshold,
+            )
+        return vector_store.search_chunks(
             query_vector=query_vector,
             top_k=effective_top_k,
-            score_threshold=similarity_threshold,
+            score_threshold=threshold,
         )
 
-        for chunk in results:
-            text_key = chunk["text"][:200]  # first 200 chars as dedup key
-            if text_key not in seen_texts:
-                seen_texts.add(text_key)
+    def _collect(chunks: List[dict]) -> None:
+        for chunk in chunks:
+            key = chunk["text"][:200]
+            if key not in seen_texts:
+                seen_texts.add(key)
                 all_results.append(chunk)
 
-    # Fallback: if no results found with threshold, retry without it
-    if not all_results:
-        logger.info("No results with threshold %.2f – retrying without threshold", similarity_threshold)
+    # ── Phase 1: search with source prefix (if requested) ──────────────
+    if source_prefix:
+        logger.info("Retriever: filtering by source prefix '%s'", source_prefix)
         for query in queries:
-            query_vector = embed_query(query)
-            results = vector_store.search_chunks(
-                query_vector=query_vector,
-                top_k=effective_top_k,
-                score_threshold=None,  # no threshold
-            )
-            for chunk in results:
-                text_key = chunk["text"][:200]
-                if text_key not in seen_texts:
-                    seen_texts.add(text_key)
-                    all_results.append(chunk)
+            _collect(_search(query, source_prefix, similarity_threshold))
 
-    # Sort by score descending and trim
+        if all_results:
+            logger.info(
+                "Prefix search found %d chunks – skipping global search",
+                len(all_results),
+            )
+        else:
+            # Prefix returned nothing → fall back to searching all sources
+            logger.info(
+                "No results for prefix '%s' – falling back to all sources",
+                source_prefix,
+            )
+            source_prefix = None   # clear prefix for phase 2
+
+    # ── Phase 2: global search (no prefix, or prefix fallback) ─────────
+    if not source_prefix:
+        for query in queries:
+            _collect(_search(query, None, similarity_threshold))
+
+    # ── Phase 3: retry without threshold if still empty ────────────────
+    if not all_results:
+        logger.info(
+            "No results with threshold %.2f – retrying without threshold",
+            similarity_threshold,
+        )
+        for query in queries:
+            _collect(_search(query, None, None))
+
+    # ── Final: sort and trim ────────────────────────────────────────────
     all_results.sort(key=lambda c: c.get("score", 0), reverse=True)
     top_chunks = all_results[:final_top_k]
 

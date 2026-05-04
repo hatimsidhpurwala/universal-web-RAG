@@ -209,6 +209,11 @@ if "agent" not in st.session_state:
     st.session_state.agent = get_agent(st.session_state.vector_store)
 if "pending_clarification" not in st.session_state:
     st.session_state.pending_clarification = None
+if "active_doc_sites" not in st.session_state:
+    # Tracks site_names of all documents uploaded in this session.
+    # Passed to agent.ask() so retrieval can be restricted to pdf_ sources
+    # when the user asks about an uploaded document.
+    st.session_state.active_doc_sites: list[str] = []
 
 
 # ======================================================================
@@ -300,6 +305,9 @@ def process_input(text: str, file=None, audio_bytes=None) -> dict:
             processed_text = pdf_text[:500] + ("…" if len(pdf_text) > 500 else "")
             input_type = "pdf"
             scraped_sites.append(site_name)
+            # ← Track this doc so agent.ask() can restrict retrieval to it
+            if site_name not in st.session_state.active_doc_sites:
+                st.session_state.active_doc_sites.append(site_name)
 
     # URL detection
     urls = detect_urls(processed_text)
@@ -788,7 +796,11 @@ if user_input or (
     with st.chat_message("assistant", avatar=CHAT_AVATAR_AI):
         confidence_placeholder = st.empty()
         with st.spinner("🧠 Thinking…"):
-            agent_result = st.session_state.agent.ask(processed_text, conv_history)
+            agent_result = st.session_state.agent.ask(
+                processed_text,
+                conv_history,
+                active_doc_sites=st.session_state.active_doc_sites,
+            )
 
         # Show a subtle note if auto deep research was used
         if "auto_deep_research" in agent_result.get("enhanced_features_used", []):

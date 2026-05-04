@@ -4,14 +4,6 @@
       "answer_style": "balanced",
       "preferred_sources": [],
       "topics_of_interest": [
-        "hello ",
-        "alhutaib.com",
-        "alhutaib.com website",
-        "Al Hutaib software solutions",
-        "Al Hutaib CCTV solutions",
-        "Al Hutaib's CCTV solutions",
-        "what is this pdf about",
-        "Al Hutaib IT solutions",
         "timechart.org",
         "Time Attendance System services",
         "services",
@@ -20,23 +12,40 @@
         "How are you?",
         "greeting",
         "https://izzan.org/ website",
-        "Izzan.org website"
+        "Izzan.org website",
+        "the PDF",
+        "the uploaded PDF",
+        "PDF upload",
+        "PDF contents",
+        "SALTO Keycards",
+        "alhutaib.com in Dubai",
+        "Alhutaib.com CCTV solutions",
+        "hello ",
+        "alhutaib.com website",
+        "the PDF the user has uploaded",
+        "PDF content"
       ],
-      "interaction_count": 23,
+      "interaction_count": 41,
       "created_at": "2026-04-29T18:36:50.341961"
     }
   },
-  "global_knowledge": {},
+  "global_knowledge": {
+    "no i awas asking about the pdf i have uploaded right now": {
+      "answer": "no i awas asking about the pdf i have uploaded right now ",
+      "source": "user_correction",
+      "timestamp": "2026-05-04T12:15:59.616696"
+    }
+  },
   "conversation_summaries": {},
   "frequently_asked": {
-    "hello": 5,
+    "hello": 10,
     "https://alhutaib.com/": 2,
     "what is this website about": 1,
     "what software solutions does this cpmpany provide": 1,
     "what cctv solutions does this company provid": 1,
     "what is the cost of al hutaib's cctv solutions?": 1,
     "what are the brands do they use": 1,
-    "what is this pdf about": 1,
+    "what is this pdf about": 2,
     "do they provide any of the pabx solutions": 1,
     "http://timechart.org/": 1,
     "what are the specific services do they offer": 1,
@@ -46,6 +55,18 @@
     "how are you?": 1,
     "hello.": 1,
     "https://izzan.org/ what is this website about": 1,
-    "https://izzan.org what is the website about": 1
+    "https://izzan.org what is the website about": 1,
+    "im asking about the pdf i have uploaded": 1,
+    "i have uploaded the pdf right now": 1,
+    "what is there in the pdf": 1,
+    "where i can find the cards in dubai '": 1,
+    "where i can find the system in india": 1,
+    "what is alhutaib.com in dubai": 1,
+    "what are the cctv solution offered by them": 1,
+    "https://alhutaib.com what is this": 1,
+    "what is the pdf about": 1,
+    "no i awas asking about the pdf i have uploaded right now": 1,
+    "what is the pdf about i have uploaded right now": 1,
+    "i am talking about the pdf i have uploaded right now": 1
   }
 }

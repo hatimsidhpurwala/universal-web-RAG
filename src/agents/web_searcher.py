@@ -42,23 +42,23 @@ def search(
 
     Each dict has keys: ``title``, ``url``, ``snippet``.
     """
+    raw: list = []          # ← always defined; avoids UnboundLocalError
     try:
         with DDGS() as ddgs:
             raw = list(ddgs.text(query, max_results=max_results))
-
-        results = [
-            {
-                "title": r.get("title", ""),
-                "url": r.get("href", r.get("link", "")),
-                "snippet": r.get("body", ""),
-            }
-            for r in raw
-        ]
-        logger.info("DuckDuckGo returned %d results for '%s'", len(results), query)
-        return results
+        logger.info("DuckDuckGo returned %d results for '%s'", len(raw), query)
     except Exception as exc:
         logger.error("DuckDuckGo search failed: %s", exc)
-        return []
+
+    # Safe to use raw here — it is always a list (empty on failure)
+    return [
+        {
+            "title": r.get("title", ""),
+            "url":   r.get("href", r.get("link", "")),
+            "snippet": r.get("body", ""),
+        }
+        for r in raw
+    ]
 
 
 # ======================================================================

@@ -40,3 +40,4 @@ class AgentState(TypedDict, total=False):
     quality_score: float               # critic agent score
     response_time_ms: int
     enhanced_features_used: List[str]  # audit trail of features activated
+    source_prefix: str                 # e.g. "pdf_" – restricts retrieval to that source type

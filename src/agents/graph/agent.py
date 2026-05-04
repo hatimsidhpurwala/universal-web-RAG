@@ -42,16 +42,10 @@ logger = logging.getLogger(__name__)
 
 
 class RAGAgent:
-    """High-level agent that exposes a single `.ask()` method.
-
-    Internally it builds and runs a LangGraph state machine, then
-    applies post-processing (fact-check, sentiment, memory, translation).
-    """
+    """High-level agent that exposes a single `.ask()` method."""
 
     def __init__(self, vector_store: Optional[VectorStore] = None) -> None:
         self.vector_store = vector_store or VectorStore()
-
-        # Sub-agents (all stateless helpers or persistent stores)
         self.memory = AdaptiveMemory()
         self.fact_verifier = FactVerifier()
         self.conversation_state = ConversationState()
@@ -60,8 +54,6 @@ class RAGAgent:
         self.multilingual = MultilingualHandler()
         self.improvement_engine = SelfImprovementEngine()
         self.agent_team = AgentTeam(self.vector_store)
-
-        # Compile the graph once at startup
         self.graph = build_graph(self.vector_store)
 
     # ──────────────────────────────────────────────────────────────────
@@ -74,29 +66,25 @@ class RAGAgent:
         conversation_history: Optional[List[dict]] = None,
         user_id: str = "default",
         enable_fact_check: bool = True,
+        active_doc_sites: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Process *question* through the full enhanced RAG pipeline.
-
-        Everything is automatic – deep research triggers when confidence
-        is below 0.8, performance analysis runs silently in the
-        background, and all answers are personalised per user.
 
         Parameters
         ----------
         question : str
             Raw user input (any language).
         conversation_history : list[dict] | None
-            Previous ``{"role": …, "content": …}`` turns.
+            Previous turns as ``{"role": …, "content": …}`` dicts.
         user_id : str
-            Identifier for per-user preference personalisation.
+            Per-user personalisation key.
         enable_fact_check : bool
-            Set False to skip the fact-verification step (faster).
-
-        Returns
-        -------
-        dict
-            final_answer, confidence, sources, web_search_performed,
-            fact_check_report, enhanced_features_used, response_time_ms …
+            Set False to skip fact-verification (faster).
+        active_doc_sites : list[str] | None
+            Site names of PDFs/docs uploaded in this session
+            (e.g. ``["pdf_Datasheet-SALTO"]``).  When provided and the
+            question appears to be about an uploaded document, retrieval
+            is restricted to ``pdf_*`` sources so web content is ignored.
         """
         start_time = time.time()
 
@@ -128,7 +116,7 @@ class RAGAgent:
             working_question, conversation_history or []
         )
 
-        # Learn from user corrections ("Actually, the answer is …")
+        # Learn from corrections ("Actually, the answer is …")
         if conv_state.get("is_correction") and conversation_history:
             last_q, last_a = "", ""
             for msg in reversed(conversation_history):
@@ -149,7 +137,34 @@ class RAGAgent:
         enhanced_question = conv_state.get("enhanced_query", working_question)
         strategy = analyze_query(enhanced_question, conversation_history)
 
-        # ── 3. Build initial state and run graph ────────────────────────
+        # ── 3. Detect document questions → restrict retrieval to pdf_ ───
+        _doc_keywords = (
+            "pdf", "document", "uploaded", "file", "datasheet",
+            "the data", "this data", "above data", "attached",
+            "right now", "this file", "the file", "i sent", "i shared",
+            "just uploaded",
+        )
+        _vague_doc_phrases = (
+            "what is it about", "summarize", "tell me about",
+            "what does it say", "what is this about", "what is the pdf",
+        )
+        has_active_docs = bool(active_doc_sites)
+        q_lower = enhanced_question.lower()
+        is_document_q = any(kw in q_lower for kw in _doc_keywords)
+        if has_active_docs and any(p in q_lower for p in _vague_doc_phrases):
+            is_document_q = True
+
+        # source_prefix="pdf_" tells the retriever node to filter by that prefix
+        source_prefix: Optional[str] = (
+            "pdf_" if (is_document_q and has_active_docs) else None
+        )
+        if source_prefix:
+            logger.info(
+                "Document question detected – restricting retrieval to '%s' "
+                "(active docs: %s)", source_prefix, active_doc_sites,
+            )
+
+        # ── 4. Build initial state and run graph ────────────────────────
         initial_state: AgentState = {
             "question": enhanced_question,
             "original_question": question,
@@ -161,6 +176,8 @@ class RAGAgent:
             "language_info": lang_info,
             "enhanced_features_used": [],
         }
+        if source_prefix:
+            initial_state["source_prefix"] = source_prefix
 
         try:
             result = self.graph.invoke(initial_state)
@@ -176,18 +193,12 @@ class RAGAgent:
                 "enhanced_features_used": [],
             }
 
-        # ── 4. Post-processing ──────────────────────────────────────────
+        # ── 5. Post-processing ──────────────────────────────────────────
         final_answer = result.get("final_answer", "")
         features_used = list(result.get("enhanced_features_used", []))
         confidence = result.get("confidence", 0.0)
 
-        # 4a. Auto deep research when confidence < 0.80
-        doc_keywords = (
-            "pdf", "document", "uploaded", "file", "datasheet",
-            "the data", "this data", "above data", "attached",
-        )
-        is_document_q = any(kw in enhanced_question.lower() for kw in doc_keywords)
-
+        # 5a. Auto deep research – SKIPPED for document questions
         if (
             confidence < 0.80
             and not result.get("web_search_performed", False)
@@ -209,7 +220,7 @@ class RAGAgent:
             except Exception as exc:
                 logger.error("Auto deep research failed: %s", exc)
 
-        # 4b. Fact verification
+        # 5b. Fact verification
         if enable_fact_check and result.get("retrieved_chunks"):
             try:
                 fc = self.fact_verifier.verify_answer(
@@ -229,21 +240,21 @@ class RAGAgent:
             except Exception as exc:
                 logger.error("Fact verification failed: %s", exc)
 
-        # 4c. Sentiment-based tone adaptation
+        # 5c. Sentiment adaptation
         final_answer = self.sentiment_adapter.adapt_response(final_answer, sentiment)
         features_used.append("sentiment_adaptation")
 
-        # 4d. Per-user personalisation
+        # 5d. Per-user personalisation
         final_answer = self.memory.personalize_response(user_id, final_answer)
 
-        # 4e. Translate answer back to user's language
+        # 5e. Translate back if needed
         if lang_info.get("needs_translation"):
             final_answer = self.multilingual.translate_response(
                 final_answer, lang_info["source_language"]
             )
             features_used.append("translation")
 
-        # ── 5. Finalise result ──────────────────────────────────────────
+        # ── 6. Finalise ─────────────────────────────────────────────────
         result["final_answer"] = final_answer
         result["confidence"] = confidence
         result["enhanced_features_used"] = features_used
@@ -251,7 +262,6 @@ class RAGAgent:
         elapsed_ms = int((time.time() - start_time) * 1000)
         result["response_time_ms"] = elapsed_ms
 
-        # Record silently for self-improvement engine
         try:
             self.improvement_engine.record_interaction(
                 query=question,
@@ -279,9 +289,7 @@ class RAGAgent:
         topic: str,
         conversation_history: Optional[List[dict]] = None,
     ) -> Dict[str, Any]:
-        """Run deep web research and return a fresh answer.
-        Called automatically (never by the user).
-        """
+        """Run deep web research and return a fresh answer."""
         logger.info("Deep research (auto): %s", topic[:80])
         try:
             info = deep_research(topic, self.vector_store)
@@ -305,18 +313,16 @@ class RAGAgent:
         }
 
     # ──────────────────────────────────────────────────────────────────
-    # Sidebar helpers (called by Streamlit, not the graph)
+    # Sidebar helpers
     # ──────────────────────────────────────────────────────────────────
 
     def get_performance_stats(self) -> dict:
-        """Return performance report for sidebar display."""
         try:
             return self.improvement_engine.analyze_performance()
         except Exception:
             return {}
 
     def get_memory_stats(self) -> dict:
-        """Return memory stats for sidebar display."""
         try:
             return {
                 **self.memory.get_stats(),

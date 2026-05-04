@@ -94,13 +94,23 @@ def make_node_retrieve_chunks(vector_store: "VectorStore"):
     """Factory: returns a node function bound to *vector_store*."""
 
     def node_retrieve_chunks(state: AgentState) -> dict:
-        """Search the vector store and return the top-k relevant chunks."""
+        """Search the vector store and return the top-k relevant chunks.
+
+        When ``source_prefix`` is set in state (e.g. ``"pdf_"``), restricts
+        the search to chunks from that source type only, falling back to
+        global search if no results are found.
+        """
         strategy = state.get("query_strategy", {})
         top_k = strategy.get("top_k_override")
 
-        kwargs = {}
+        kwargs: dict = {}
         if top_k:
             kwargs["final_top_k"] = top_k
+
+        # Source filter set by the agent when question is about an uploaded doc
+        source_prefix = state.get("source_prefix")
+        if source_prefix:
+            kwargs["source_prefix"] = source_prefix
 
         chunks = retrieve_chunks(
             state.get("generated_queries", [state["question"]]),
@@ -139,7 +149,20 @@ def make_node_web_search(vector_store: "VectorStore"):
     """Factory: returns a node function bound to *vector_store*."""
 
     def node_web_search(state: AgentState) -> dict:
-        """Scrape the web and index fresh content into the vector store."""
+        """Scrape the web and index fresh content into the vector store.
+
+        Skipped automatically when ``source_prefix`` is set in state —
+        there is no point web-searching for content from a local document.
+        """
+        if state.get("source_prefix"):
+            logger.info("Web search skipped – question is about a local document")
+            features = list(state.get("enhanced_features_used", []))
+            return {
+                "web_search_performed": False,
+                "research_info": {},
+                "enhanced_features_used": features,
+            }
+
         logger.info(
             "Web search triggered (confidence=%.2f)", state.get("confidence", 0)
         )
