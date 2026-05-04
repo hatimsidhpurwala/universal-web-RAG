@@ -4,8 +4,6 @@
       "answer_style": "balanced",
       "preferred_sources": [],
       "topics_of_interest": [
-        "alhutaib.com in Dubai",
-        "Alhutaib.com CCTV solutions",
         "hello ",
         "alhutaib.com website",
         "the PDF the user has uploaded",
@@ -23,9 +21,11 @@
         "SALTO keycards in India",
         "the PDF",
         "what is this pdf about",
-        "hatim.jk pdf"
+        "hatim.jk pdf",
+        "the uploaded PDF",
+        "research_paper PDF"
       ],
-      "interaction_count": 66,
+      "interaction_count": 71,
       "created_at": "2026-04-29T18:36:50.341961",
       "answer_style_confirmed": true
     }
@@ -35,11 +35,16 @@
       "answer": "no i awas asking about the pdf i have uploaded right now ",
       "source": "user_correction",
       "timestamp": "2026-05-04T12:15:59.616696"
+    },
+    "iam asking about the pdf research_paper": {
+      "answer": "iam asking about the pdf research_paper ",
+      "source": "user_correction",
+      "timestamp": "2026-05-04T16:25:55.375585"
     }
   },
   "conversation_summaries": {},
   "frequently_asked": {
-    "hello": 14,
+    "hello": 15,
     "https://alhutaib.com/": 2,
     "what is this website about": 1,
     "what software solutions does this cpmpany provide": 1,
@@ -85,6 +90,10 @@
     "where can i find these key cards in india": 1,
     "can i get the contact details": 1,
     "im asking in india": 1,
-    "what is this pdf about hatim.jk": 1
+    "what is this pdf about hatim.jk": 1,
+    "what is this pdf i have uploaded right now is baout": 1,
+    "iam asking about the pdf research_paper": 1,
+    "what is salto key cards": 1,
+    "where can i find these cards in dubai and uae": 1
   }
 }

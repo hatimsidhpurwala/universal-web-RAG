@@ -1,11 +1,8 @@
 """
 Query generator agent.
 
-Uses LangChain's with_structured_output() instead of hard-prompting.
-
-Converts a natural-language question into 1-3 optimised search queries
-for the vector database. Returns a guaranteed-valid QueryGeneration
-Pydantic object — no json.loads, no parsing risk.
+Converts a natural-language question into 2-4 optimised search queries
+for the vector database. Uses with_structured_output for type safety.
 """
 
 from __future__ import annotations
@@ -22,27 +19,53 @@ from src.agents.models import QueryGeneration
 logger = logging.getLogger(__name__)
 
 # ── System prompt ────────────────────────────────────────────────────────────
-# Schema enforcement is handled by LangChain — no JSON instructions needed.
-
 _SYSTEM_PROMPT = """\
-You are a search-query optimisation assistant. Given a user question,
-produce 1-3 highly targeted search queries that will retrieve the most
-relevant chunks from a vector database.
+You are a search-query optimisation engine for a RAG (Retrieval-Augmented
+Generation) system. Your ONLY job is to convert a user question into 2–4
+short, precise search queries that will find the right chunks in a vector DB.
 
-Rules:
-1. Remove filler words (the, a, an, is, are, do, does).
-2. Keep key nouns, verbs, and domain-specific terms.
-3. Include synonyms if helpful.
-4. Each query should be 3-6 words.
-5. Generate 1 query for simple questions, 2-3 for complex ones.
-6. If the user asks a VAGUE question like "what is the pdf about" or
-   "summarize the document", generate BROAD queries that will match
-   the main topic of any document. For example:
-   - "overview summary main topic"
-   - "product description specifications"
-   - "company services features"
-   This ensures the vector search retrieves the most representative
-   chunks from the knowledge base.
+QUERY CONSTRUCTION RULES:
+1. Strip filler words: the, a, an, is, are, do, does, can, could, please, i.
+2. Keep: nouns, proper nouns, technical terms, numbers, locations, verbs.
+3. Each query MUST be 3–8 words. No full sentences.
+4. No punctuation at end of queries.
+5. Generate 2 queries minimum, 4 maximum.
+6. Queries must be semantically diverse — do NOT generate near-duplicates.
+
+QUERY TYPE RULES:
+  For DOCUMENT / PDF questions ("what is the pdf about", "summarize"):
+    → Generate broad queries: "product overview specifications features"
+    → Also generate specific: "[product name] details" if product is known
+    → Also add: "technical specs models available"
+
+  For CONTACT / LOCATION questions ("contact in India", "where to buy"):
+    → Generate: "[company] India contact address"
+    → Also: "[company] distributor dealer [country]"
+    → Also: "[company] office [city]"
+
+  For TECHNICAL / SPEC questions ("chip used", "dimensions", "security"):
+    → Generate: "[product] [spec term]"
+    → Also: "[product] technical specifications"
+
+  For GENERAL questions:
+    → Generate the most specific, targeted queries possible.
+
+DO NOT:
+  - Generate questions (no "what is...?")
+  - Generate full sentences
+  - Repeat the same query twice
+  - Include the word "information" alone as a query
+  - Use vague single-word queries like "document" or "info"
+
+EXAMPLES:
+  User: "what is the salto keycard chip?"
+  Queries: ["SALTO keycard chip type", "MIFARE DESFire specifications", "SALTO CCVD chip security"]
+
+  User: "contact details in india"
+  Queries: ["SALTO India contact address", "SALTO distributor India", "SALTO Systems India office email"]
+
+  User: "what is the pdf about"
+  Queries: ["product overview main features", "document summary specifications", "company services solutions"]
 """
 
 # ── Structured LLM ──────────────────────────────────────────────────────────
@@ -67,15 +90,20 @@ def generate_queries(
     """
     messages = [SystemMessage(content=_SYSTEM_PROMPT)]
 
+    # Include last 2 user turns for context (e.g. follow-up questions)
     if conversation_history:
-        for msg in conversation_history[-4:]:
-            if msg.get("role") == "user":
-                messages.append(HumanMessage(content=msg.get("content", "")))
+        recent = [m for m in conversation_history[-6:] if m.get("role") == "user"]
+        for msg in recent[-2:]:
+            messages.append(HumanMessage(content=f"[context]: {msg.get('content', '')}"))
 
     messages.append(HumanMessage(content=question))
 
     try:
         result: QueryGeneration = _structured_llm.invoke(messages)
+        # Safety: remove any empty or too-short queries
+        result.queries = [q.strip() for q in result.queries if len(q.strip()) > 4]
+        if not result.queries:
+            result.queries = [question]
         logger.info("Generated %d queries: %s", len(result.queries), result.queries)
         return result
     except Exception as exc:

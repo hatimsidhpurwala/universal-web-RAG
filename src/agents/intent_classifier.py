@@ -1,18 +1,8 @@
 """
 Intent classification agent.
 
-Uses LangChain's with_structured_output() instead of hard-prompting.
-
-Before (hard prompting):
-  - System prompt contained the raw JSON schema as text
-  - LLM returned a plain string → json.loads() → manual Pydantic validation
-  - Risk: LLM could forget the format, use wrong field names, wrong types
-
-After (with_structured_output):
-  - Pydantic model IS the schema (single source of truth)
-  - LangChain converts it to a tool-calling contract
-  - Groq is FORCED to return that exact structure
-  - We get back a typed Pydantic object — no parsing, no risk of crashes
+Uses LangChain's with_structured_output() — the Pydantic model IS the schema.
+Groq is forced via tool-calling to always return the exact structure.
 """
 
 from __future__ import annotations
@@ -29,37 +19,51 @@ from src.agents.models import IntentClassification
 logger = logging.getLogger(__name__)
 
 # ── System prompt ────────────────────────────────────────────────────────────
-# Note: NO "Respond with valid JSON" instruction needed anymore.
-# LangChain enforces the schema via tool-calling at the API level.
-
 _SYSTEM_PROMPT = """\
-You are an intent-classification assistant. Given a user message and
-optional conversation history, classify the user's intent into exactly
-one of the following categories:
+You are an intent-classification engine. Classify the user message into
+EXACTLY ONE of these categories. Never invent new categories.
 
-  • greeting        – Hi, hello, how are you, hey
-  • gratitude       – Thank you, thanks, appreciate it
-  • general_knowledge – Questions answerable without any company data
-  • retrieval_needed – Questions that require searching a knowledge base
-                       (company products, services, specs, pricing, etc.)
-  • clarification   – User asking for more explanation of a previous answer
-  • farewell        – Goodbye, see you later, bye
+CATEGORIES (read carefully before choosing):
+  greeting        – Pure social openers: "hi", "hello", "hey", "good morning"
+  gratitude       – Thank-you expressions: "thanks", "thank you", "appreciate it"
+  farewell        – Closing messages: "bye", "goodbye", "see you", "take care"
+  clarification   – Asking for MORE DETAIL on the PREVIOUS assistant reply,
+                    e.g. "explain more", "what do you mean", "can you elaborate"
+  general_knowledge – Factual questions whose answer does NOT require searching
+                    any uploaded file or scraped website, e.g. "what is Python",
+                    "who is Einstein", "how does GPS work"
+  retrieval_needed  – EVERYTHING ELSE that requires searching the knowledge base:
+                    product specs, prices, company info, uploaded PDF content,
+                    contact details, "where can I buy", "what does the doc say"
 
-Rules:
-1. If the user asks about any company, product, service, document content,
-   uploaded data, or scraped website → ALWAYS classify as "retrieval_needed".
-2. If the message is a conversational pleasantry → NOT "retrieval_needed".
-3. Set confidence to 0.9+ for clear cases, 0.6–0.8 for ambiguous ones.
+STRICT RULES — follow in this exact order:
+1. If the message mentions "pdf", "document", "file", "uploaded", "datasheet",
+   OR references a named company/product/service → ALWAYS "retrieval_needed".
+2. If the message is a FOLLOW-UP question about a topic from history that
+   needed retrieval → classify as "retrieval_needed".
+3. If the message is purely social (no information request) → greeting/gratitude/farewell.
+4. If the message asks "explain more" or "what did you mean" → "clarification".
+5. Only use "general_knowledge" for standalone factual questions with NO company
+   or product context.
+
+CONFIDENCE RULES:
+  • 0.95–1.0 = Crystal clear (pure greeting, direct product question)
+  • 0.80–0.94 = Clear but slightly ambiguous
+  • 0.60–0.79 = Ambiguous — could fit multiple categories
+  • Below 0.60 = Very uncertain — default to "retrieval_needed"
+
+DO NOT:
+  - Mix categories (pick exactly one)
+  - Set confidence above 0.95 unless you are 100% certain
+  - Classify product/company questions as "general_knowledge"
 """
 
 # ── Structured LLM (built once, reused) ────────────────────────────────────
-# with_structured_output reads IntentClassification's fields + descriptions
-# and builds a tool-calling contract automatically.
 _llm = ChatGroq(
     api_key=GROQ_API_KEY,
     model=LLM_MODEL,
-    temperature=0.1,
-    max_tokens=300,
+    temperature=0.0,   # zero temperature for deterministic classification
+    max_tokens=200,
 )
 _structured_llm = _llm.with_structured_output(IntentClassification)
 
@@ -72,21 +76,21 @@ def classify_intent(
 ) -> IntentClassification:
     """Classify *question* and return a structured IntentClassification.
 
-    Returns a guaranteed valid Pydantic object — no json.loads, no
-    manual field mapping, no crash risk from malformed LLM output.
+    Returns a guaranteed valid Pydantic object — no json.loads risk.
     """
     messages = [SystemMessage(content=_SYSTEM_PROMPT)]
 
-    # Inject recent history for context
+    # Inject recent history so clarification detection works
     if conversation_history:
         for msg in conversation_history[-6:]:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if role == "user":
-                messages.append(HumanMessage(content=content))
-            # Skip assistant messages to keep token count low
+                messages.append(HumanMessage(content=f"[prev user]: {content}"))
+            elif role == "assistant":
+                messages.append(HumanMessage(content=f"[prev assistant]: {content[:200]}"))
 
-    messages.append(HumanMessage(content=question))
+    messages.append(HumanMessage(content=f"[current]: {question}"))
 
     try:
         result: IntentClassification = _structured_llm.invoke(messages)
